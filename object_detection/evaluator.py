@@ -31,7 +31,8 @@ from object_detection.utils import ops
 slim = tf.contrib.slim
 
 EVAL_METRICS_FN_DICT = {
-    'pascal_voc_metrics': eval_util.evaluate_detection_results_pascal_voc
+    'pascal_voc_metrics': eval_util.evaluate_detection_results_pascal_voc,
+    'coco_metrics': eval_util.evaluate_detection_results_coco
 }
 
 

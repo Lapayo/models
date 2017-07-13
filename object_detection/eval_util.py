@@ -27,6 +27,10 @@ from object_detection.utils import label_map_util
 from object_detection.utils import object_detection_evaluation
 from object_detection.utils import visualization_utils as vis_utils
 
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
+import json
+
 slim = tf.contrib.slim
 
 
@@ -49,6 +53,294 @@ def write_metrics(metrics, global_step, summary_dir):
   summary_writer.close()
   logging.info('Metrics written to tf summary.')
 
+
+def evaluate_detection_results_coco(result_lists,
+                                          categories,
+                                          label_id_offset=0,
+                                          iou_thres=0.5,
+                                          corloc_summary=False):
+  """Computes Pascal VOC detection metrics given groundtruth and detections.
+
+  This function computes Pascal VOC metrics. This function by default
+  takes detections and groundtruth boxes encoded in result_lists and writes
+  evaluation results to tf summaries which can be viewed on tensorboard.
+
+  Args:
+    result_lists: a dictionary holding lists of groundtruth and detection
+      data corresponding to each image being evaluated.  The following keys
+      are required:
+        'image_id': a list of string ids
+        'detection_boxes': a list of float32 numpy arrays of shape [N, 4]
+        'detection_scores': a list of float32 numpy arrays of shape [N]
+        'detection_classes': a list of int32 numpy arrays of shape [N]
+        'groundtruth_boxes': a list of float32 numpy arrays of shape [M, 4]
+        'groundtruth_classes': a list of int32 numpy arrays of shape [M]
+      and the remaining fields below are optional:
+        'difficult': a list of boolean arrays of shape [M] indicating the
+          difficulty of groundtruth boxes. Some datasets like PASCAL VOC provide
+          this information and it is used to remove difficult examples from eval
+          in order to not penalize the models on them.
+      Note that it is okay to have additional fields in result_lists --- they
+      are simply ignored.
+    categories: a list of dictionaries representing all possible categories.
+      Each dict in this list has the following keys:
+          'id': (required) an integer id uniquely identifying this category
+          'name': (required) string representing category name
+            e.g., 'cat', 'dog', 'pizza'
+    label_id_offset: an integer offset for the label space.
+    iou_thres: float determining the IoU threshold at which a box is considered
+        correct. Defaults to the standard 0.5.
+    corloc_summary: boolean. If True, also outputs CorLoc metrics.
+
+  Returns:
+    A dictionary of metric names to scalar values.
+
+  Raises:
+    ValueError: if the set of keys in result_lists is not a superset of the
+      expected list of keys.  Unexpected keys are ignored.
+    ValueError: if the lists in result_lists have inconsistent sizes.
+  """
+  # check for expected keys in result_lists
+  expected_keys = [
+      'detection_boxes', 'detection_scores', 'detection_classes', 'image_id'
+  ]
+  expected_keys += ['groundtruth_boxes', 'groundtruth_classes']
+  if not set(expected_keys).issubset(set(result_lists.keys())):
+    raise ValueError('result_lists does not have expected key set.')
+  num_results = len(result_lists[expected_keys[0]])
+  for key in expected_keys:
+    if len(result_lists[key]) != num_results:
+      raise ValueError('Inconsistent list sizes in result_lists')
+
+  # Pascal VOC evaluator assumes foreground index starts from zero.
+  categories = copy.deepcopy(categories)
+  for idx in range(len(categories)):
+    categories[idx]['id'] -= label_id_offset
+
+  # num_classes (maybe encoded as categories)
+  num_classes = max([cat['id'] for cat in categories]) + 1
+  logging.info('Computing COCO metrics on results.')
+  if all(image_id.isdigit() for image_id in result_lists['image_id']):
+    image_ids = [int(image_id) for image_id in result_lists['image_id']]
+  else:
+    image_ids = range(num_results)
+
+  ### COCO HERE ###
+  """
+  result_lists,
+    'image_id': a list of string ids
+    'detection_boxes': a list of float32 numpy arrays of shape [N, 4]
+    'detection_scores': a list of float32 numpy arrays of shape [N]
+    'detection_classes': a list of int32 numpy arrays of shape [N]
+    'groundtruth_boxes': a list of float32 numpy arrays of shape [M, 4]
+    'groundtruth_classes': a list of int32 numpy arrays of shape [M]
+
+  categories,
+
+
+
+  COCO ANNOTATIONS:
+  [{
+  "image_id" : int,
+  "category_id" : int,
+  "bbox" : [x,y,width,height],
+  "score" : float,
+  }]
+  """
+  print(categories)
+
+  cocoGt = COCO()
+  cocoDt = COCO()
+
+  cocoGt.dataset['categories'] = categories
+  cocoDt.dataset['categories'] = categories
+
+  cocoGt.dataset['annotations'] = []
+  cocoDt.dataset['annotations'] = []
+
+  cocoGt.dataset['images'] = []
+  cocoDt.dataset['images'] = []
+
+  print(image_ids)
+
+
+  """print(json.dumps(result_lists['image_id']))
+
+  for result in result_lists:
+    image_id = result['image_id']
+
+    img = {id: image_id}
+    cocoGt.dataset['images'].append(img)
+    cocoDt.dataset['images'].append(img)
+
+    for i, (bbox, category_id) in enumerate(zip(groundtruth_boxes, groundtruth_classes)):
+      cocoGt.dataset['annotations'].append({
+          "image_id" : image_id,
+          "category_id" : category_id,
+          "bbox" : [bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]],
+        })
+
+    for i, (bbox, category_id, score) in enumerate(zip(detection_boxes, detection_classes, detection_scores)):
+      cocoDt.dataset['annotations'].append({
+          "image_id" : image_id,
+          "category_id" : category_id,
+          "bbox" : [bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1]],
+          "score" : score,
+        })
+  """
+  # bbox: [y_min, x_min, y_max, x_max] -________-
+  gt_p = 0
+  dt_p = 0
+  for idx, image_id in enumerate(image_ids):
+
+    img = {
+      "id": image_id,
+      "iscrowd": False,
+    }
+    cocoGt.dataset['images'].append(img)
+    cocoDt.dataset['images'].append(img)
+    
+    #bbox = result_lists['groundtruth_boxes'][idx]
+    #gt_cat_id = result_lists['groundtruth_classes'][idx] - label_id_offset
+
+    for i, (bbox, gt_cat_id) in enumerate(zip(result_lists['groundtruth_boxes'][idx], result_lists['groundtruth_classes'][idx] - label_id_offset)):
+      y = bbox[0] * 1080
+      x = bbox[1] * 1920
+      y_max = bbox[2] * 1080
+      x_max = bbox[3] * 1920
+      width = x_max - x
+      height = y_max - y
+
+      print(gt_cat_id)
+
+      cocoGt.dataset['annotations'].append({
+        "id": gt_p,
+        "image_id" : image_id,
+        "category_id" : gt_cat_id,
+        "bbox" : [x, y, width, height],
+        "iscrowd": False,
+        "area": width * height
+      })
+
+      gt_p += 1
+
+    #bbox = result_lists['detection_boxes'][idx]
+    #dt_cat_id = result_lists['detection_classes'][idx] - label_id_offset
+    #dt_score = result_lists['detection_scores'][idx]
+
+    for i, (bbox, dt_cat_id, dt_score) in enumerate(zip(result_lists['detection_boxes'][idx], result_lists['detection_classes'][idx] - label_id_offset, result_lists['detection_scores'][idx])):
+      y = bbox[0] * 1080
+      x = bbox[1] * 1920
+      y_max = bbox[2] * 1080
+      x_max = bbox[3] * 1920
+      width = x_max - x
+      height = y_max - y
+
+      cocoDt.dataset['annotations'].append({
+        "id": dt_p,
+        "image_id" : image_id,
+        "category_id" : dt_cat_id,
+        "bbox" : [x, y, width, height],
+        "score" : dt_score,
+        "area": width * height
+      })
+
+      dt_p += 1
+
+
+
+  cocoGt.createIndex()
+  cocoDt.createIndex()
+
+
+  cocoEval = COCOeval(cocoGt, cocoDt, 'bbox')
+  # DUNNO? cocoEval.params.useCats = False
+  cocoEval.evaluate()
+  cocoEval.accumulate()
+
+  def _summarize( ap=1, iouThr=None, areaRng='all', maxDets=100 ):
+    p = cocoEval.params
+
+    aind = [i for i, aRng in enumerate(p.areaRngLbl) if aRng == areaRng]
+    mind = [i for i, mDet in enumerate(p.maxDets) if mDet == maxDets]
+    if ap == 1:
+        # dimension of precision: [TxRxKxAxM]
+        s = cocoEval.eval['precision']
+        # IoU
+        if iouThr is not None:
+            t = np.where(iouThr == p.iouThrs)[0]
+            s = s[t]
+        s = s[:,:,:,aind,mind]
+    else:
+        # dimension of recall: [TxKxAxM]
+        s = cocoEval.eval['recall']
+        if iouThr is not None:
+            t = np.where(iouThr == p.iouThrs)[0]
+            s = s[t]
+        s = s[:,:,aind,mind]
+    if len(s[s>-1])==0:
+        mean_s = -1
+    else:
+        mean_s = np.mean(s[s>-1])
+
+    if (mean_s == -1): 
+      mean_s = float('nan')
+
+    return mean_s
+  
+  metrics = {}
+
+  metrics['Precision/2. mAP@[ IoU=0.50:0.95 | area=   all | maxDets=100 ]'] = _summarize(1)
+  metrics['Precision/3. mAP@[ IoU=0.50      | area=   all | maxDets=100 ]'] = _summarize(1, iouThr=.5, maxDets=cocoEval.params.maxDets[2])
+  metrics['Precision/4. mAP@[ IoU=0.75      | area=   all | maxDets=100 ]'] = _summarize(1, iouThr=.75, maxDets=cocoEval.params.maxDets[2])
+  metrics['Precision/5. mAP@[ IoU=0.50:0.95 | area= small | maxDets=100 ]'] = _summarize(1, areaRng='small', maxDets=cocoEval.params.maxDets[2])
+  metrics['Precision/6. mAP@[ IoU=0.50:0.95 | area=medium | maxDets=100 ]'] = _summarize(1, areaRng='medium', maxDets=cocoEval.params.maxDets[2])
+  metrics['Precision/7. mAP@[ IoU=0.50:0.95 | area= large | maxDets=100 ]'] = _summarize(1, areaRng='large', maxDets=cocoEval.params.maxDets[2])
+  metrics['Recall/1. mAP@[ IoU=0.50:0.95 | area=   all | maxDets=  1 ]'] = _summarize(0, maxDets=cocoEval.params.maxDets[0])
+  metrics['Recall/2. mAP@[ IoU=0.50:0.95 | area=   all | maxDets= 10 ]'] = _summarize(0, maxDets=cocoEval.params.maxDets[1])
+  metrics['Recall/3. mAP@[ IoU=0.50:0.95 | area=   all | maxDets=100 ]'] = _summarize(0, maxDets=cocoEval.params.maxDets[2])
+  metrics['Recall/4. mAP@[ IoU=0.50:0.95 | area= small | maxDets=100 ]'] = _summarize(0, areaRng='small', maxDets=cocoEval.params.maxDets[2])
+  metrics['Recall/5. mAP@[ IoU=0.50:0.95 | area=medium | maxDets=100 ]'] = _summarize(0, areaRng='medium', maxDets=cocoEval.params.maxDets[2])
+  metrics['Recall/6. mAP@[ IoU=0.50:0.95 | area= large | maxDets=100 ]'] = _summarize(0, areaRng='large', maxDets=cocoEval.params.maxDets[2])
+
+  evaluator = object_detection_evaluation.ObjectDetectionEvaluation(
+      num_classes, matching_iou_threshold=iou_thres)
+
+  difficult_lists = None
+  if 'difficult' in result_lists and result_lists['difficult']:
+    difficult_lists = result_lists['difficult']
+  for idx, image_id in enumerate(image_ids):
+    difficult = None
+    if difficult_lists is not None and difficult_lists[idx].size:
+      difficult = difficult_lists[idx].astype(np.bool)
+    evaluator.add_single_ground_truth_image_info(
+        image_id, result_lists['groundtruth_boxes'][idx],
+        result_lists['groundtruth_classes'][idx] - label_id_offset,
+        difficult)
+    evaluator.add_single_detected_image_info(
+        image_id, result_lists['detection_boxes'][idx],
+        result_lists['detection_scores'][idx],
+        result_lists['detection_classes'][idx] - label_id_offset)
+  per_class_ap, mean_ap, _, _, per_class_corloc, mean_corloc = (
+      evaluator.evaluate())
+
+  metrics['Precision/1. mAP@{}IOU (VOC)'.format(iou_thres)] = mean_ap
+  category_index = label_map_util.create_category_index(categories)
+  for idx in range(per_class_ap.size):
+    if idx in category_index:
+      display_name = ('PerformanceByCategory/mAP@{}IOU/{}'
+                      .format(iou_thres, category_index[idx]['name']))
+      metrics[display_name] = per_class_ap[idx]
+
+  if corloc_summary:
+    metrics['CorLoc/CorLoc@{}IOU'.format(iou_thres)] = mean_corloc
+    for idx in range(per_class_corloc.size):
+      if idx in category_index:
+        display_name = (
+            'PerformanceByCategory/CorLoc@{}IOU/{}'.format(
+                iou_thres, category_index[idx]['name']))
+        metrics[display_name] = per_class_corloc[idx]
+  return metrics
 
 def evaluate_detection_results_pascal_voc(result_lists,
                                           categories,
