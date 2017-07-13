@@ -204,10 +204,10 @@ def evaluate_detection_results_coco(result_lists,
     #gt_cat_id = result_lists['groundtruth_classes'][idx] - label_id_offset
 
     for i, (bbox, gt_cat_id) in enumerate(zip(result_lists['groundtruth_boxes'][idx], result_lists['groundtruth_classes'][idx] - label_id_offset)):
-      y = bbox[0] * 1080
-      x = bbox[1] * 1920
-      y_max = bbox[2] * 1080
-      x_max = bbox[3] * 1920
+      y = bbox[0] * 1024
+      x = bbox[1] * 1024
+      y_max = bbox[2] * 1024
+      x_max = bbox[3] * 1024
       width = x_max - x
       height = y_max - y
 
@@ -229,10 +229,10 @@ def evaluate_detection_results_coco(result_lists,
     #dt_score = result_lists['detection_scores'][idx]
 
     for i, (bbox, dt_cat_id, dt_score) in enumerate(zip(result_lists['detection_boxes'][idx], result_lists['detection_classes'][idx] - label_id_offset, result_lists['detection_scores'][idx])):
-      y = bbox[0] * 1080
-      x = bbox[1] * 1920
-      y_max = bbox[2] * 1080
-      x_max = bbox[3] * 1920
+      y = bbox[0] * 1024
+      x = bbox[1] * 1024
+      y_max = bbox[2] * 1024
+      x_max = bbox[3] * 1024
       width = x_max - x
       height = y_max - y
 
